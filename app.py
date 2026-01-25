@@ -13,24 +13,19 @@ DATA_PATH = "moat_sp500.csv"
 EXCEL_PATH = "sp500_constituents.xlsx"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# =========================
-# DISCORD FUNCTIONS
-# =========================
 
 def build_top10_message(df):
     top10 = df.sort_values("MoatScore", ascending=False).head(10)
-
     lines = []
     for i, row in enumerate(top10.itertuples(), start=1):
-        emoji = row.MoatLabel.split()[0]
-        lines.append(f"{i}. **{row.Ticker}** — {row.MoatScore} {emoji}")
+        lines.append(f"{i}. **{row.Ticker}** — {row.MoatScore} {row.MoatLabel.split()[0]}")
 
     return (
         "🏰 **Moat Scanner – S&P 500**\n"
         "📊 Scan complété\n\n"
         "🔝 **Top 10 – Moat Score**\n"
         + "\n".join(lines)
-        + "\n\n📎 Fichier CSV complet en pièce jointe"
+        + "\n\n📎 CSV complet en pièce jointe"
     )
 
 
@@ -38,19 +33,16 @@ def send_to_discord(df, csv_path):
     if not DISCORD_WEBHOOK_URL:
         return False
 
-    message = build_top10_message(df)
-
     with open(csv_path, "rb") as f:
-        files = {"file": ("moat_sp500.csv", f, "text/csv")}
-        payload = {"content": message}
-        r = requests.post(DISCORD_WEBHOOK_URL, data=payload, files=files, timeout=20)
+        r = requests.post(
+            DISCORD_WEBHOOK_URL,
+            data={"content": build_top10_message(df)},
+            files={"file": ("moat_sp500.csv", f, "text/csv")},
+            timeout=20
+        )
 
     return r.status_code in (200, 204)
 
-
-# =========================
-# SCAN FUNCTION
-# =========================
 
 def run_scan(progress_bar, status):
     df = pd.read_excel(EXCEL_PATH)
@@ -72,7 +64,7 @@ def run_scan(progress_bar, status):
 
         results.append({
             "Ticker": ticker,
-            "MoatScore": scores[0],
+            "MoatScore": round(scores[0], 1),
             "MoatTrend": round(trend, 2),
             "MoatLabel": moat_trend_label(trend)
         })
@@ -82,58 +74,29 @@ def run_scan(progress_bar, status):
     return out
 
 
-# =========================
-# UI
-# =========================
-
 if "data" not in st.session_state:
     st.session_state.data = None
 
-col1, col2 = st.columns([1, 3])
-
-with col1:
-    start_scan = st.button("🚀 Lancer le scan S&P 500")
-
-with col2:
-    if st.session_state.data is not None:
-        st.success("✅ Scan complété")
-
-# =========================
-# RUN SCAN
-# =========================
-
-if start_scan:
+if st.button("🚀 Lancer le scan S&P 500"):
     progress_bar = st.progress(0)
     status = st.empty()
-
     with st.spinner("📊 Scan en cours…"):
-        df = run_scan(progress_bar, status)
-        st.session_state.data = df
-
+        st.session_state.data = run_scan(progress_bar, status)
     progress_bar.empty()
     status.empty()
 
-# =========================
-# LOAD EXISTING DATA
-# =========================
-
 if st.session_state.data is None and os.path.exists(DATA_PATH):
     st.session_state.data = pd.read_csv(DATA_PATH)
-
-# =========================
-# DISPLAY
-# =========================
 
 if st.session_state.data is not None:
     df = st.session_state.data
 
     st.sidebar.header("Filtres")
-
-    min_score = st.sidebar.slider("Moat Score minimum", 0, 100, 70)
+    min_score = st.sidebar.slider("Moat Score minimum", 0, 100, 40)
     trend_choice = st.sidebar.multiselect(
         "Moat Trend",
         ["🟢 Expansion", "🟡 Stable", "🔴 Érosion"],
-        default=["🟢 Expansion", "🟡 Stable"]
+        default=["🟢 Expansion", "🟡 Stable", "🔴 Érosion"]
     )
 
     filtered = df[
@@ -146,28 +109,10 @@ if st.session_state.data is not None:
     st.subheader("📊 Résultats")
     st.dataframe(filtered.sort_values("MoatScore", ascending=False), use_container_width=True)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Titres", len(filtered))
-    col2.metric("Moat moyen", round(filtered["MoatScore"].mean(), 1))
-    col3.metric("Core Holdings", filtered["CoreHolding"].sum())
-
-    colA, colB = st.columns(2)
-
-    with colA:
-        st.download_button(
-            "📥 Télécharger CSV",
-            filtered.to_csv(index=False),
-            "moat_filtered.csv",
-            "text/csv"
-        )
-
-    with colB:
-        if st.button("📨 Envoyer résumé + Top 10 sur Discord"):
-            ok = send_to_discord(df, DATA_PATH)
-            if ok:
-                st.success("✅ Résumé + CSV envoyés sur Discord")
-            else:
-                st.error("❌ Erreur d’envoi Discord")
-
+    if st.button("📨 Envoyer Top 10 + CSV sur Discord"):
+        if send_to_discord(df, DATA_PATH):
+            st.success("✅ Envoyé sur Discord")
+        else:
+            st.error("❌ Erreur Discord")
 else:
     st.info("👉 Clique sur **Lancer le scan S&P 500** pour commencer.")
