@@ -22,6 +22,47 @@ EXCEL_PATH = "sp500_constituents.xlsx"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # =========================
+# DISCORD – CONSTRUCTION MESSAGE
+# =========================
+
+def build_results_message(df, top_n=10):
+    top = df.sort_values("MoatPercentile", ascending=False).head(top_n)
+
+    lines = []
+    for i, row in enumerate(top.itertuples(), start=1):
+        lines.append(
+            f"{i}. **{row.Ticker}** ({row.Sector}) — "
+            f"{round(row.MoatPercentile,1)}% {row.MoatLabel}"
+        )
+
+    message = (
+        "🏰 **Moat Scanner – S&P 500**\n"
+        f"📊 Titres analysés : {len(df)}\n\n"
+        f"🔝 **Top {top_n} – Moat relatif (percentile sectoriel)**\n"
+        + "\n".join(lines)
+        + "\n\n📎 Fichier CSV complet en pièce jointe"
+    )
+
+    return message
+
+
+def send_results_to_discord(df, csv_path):
+    if not DISCORD_WEBHOOK_URL:
+        return False
+
+    message = build_results_message(df)
+
+    with open(csv_path, "rb") as f:
+        response = requests.post(
+            DISCORD_WEBHOOK_URL,
+            data={"content": message},
+            files={"file": ("moat_sp500.csv", f, "text/csv")},
+            timeout=20
+        )
+
+    return response.status_code in (200, 204)
+
+# =========================
 # SCAN ENGINE (ROBUSTE)
 # =========================
 
@@ -39,7 +80,7 @@ def run_scan(progress, status):
         if history is None or history.empty:
             continue
 
-        # ✅ ROBUSTESSE CACHE (ancien / nouveau)
+        # Support ancien / nouveau cache
         if "YearScore" in history.columns:
             yearly_scores = history["YearScore"].tolist()
         elif "MoatScore" in history.columns:
@@ -47,11 +88,7 @@ def run_scan(progress, status):
         else:
             continue
 
-        # Récupération secteur
-        if "Sector" in history.columns:
-            sector = history["Sector"].iloc[0]
-        else:
-            sector = "Unknown"
+        sector = history["Sector"].iloc[0] if "Sector" in history.columns else "Unknown"
 
         raw_score = sum(yearly_scores) / len(yearly_scores)
         trend = moat_trend(yearly_scores)
@@ -66,10 +103,7 @@ def run_scan(progress, status):
 
     df = pd.DataFrame(results)
 
-    # =========================
-    # MOAT RELATIF (PERCENTILE SECTORIEL)
-    # =========================
-
+    # ===== MOAT RELATIF (PERCENTILE SECTORIEL) =====
     df["MoatPercentile"] = (
         df.groupby("Sector")["MoatRaw"]
           .rank(pct=True) * 100
@@ -79,21 +113,21 @@ def run_scan(progress, status):
     return df
 
 # =========================
-# UI STATE
+# SESSION STATE
 # =========================
 
 if "data" not in st.session_state:
     st.session_state.data = None
 
 # =========================
-# ACTION
+# ACTIONS
 # =========================
 
 if st.button("🚀 Lancer le scan S&P 500"):
     bar = st.progress(0)
     status = st.empty()
 
-    with st.spinner("📊 Scan en cours (Moat relatif sectoriel)…"):
+    with st.spinner("📊 Scan en cours…"):
         st.session_state.data = run_scan(bar, status)
 
     bar.empty()
@@ -104,7 +138,7 @@ if st.session_state.data is None and os.path.exists(DATA_PATH):
     st.session_state.data = pd.read_csv(DATA_PATH)
 
 # =========================
-# AFFICHAGE
+# AFFICHAGE + DISCORD
 # =========================
 
 if st.session_state.data is not None:
@@ -113,7 +147,7 @@ if st.session_state.data is not None:
     st.sidebar.header("Filtres")
 
     min_pct = st.sidebar.slider(
-        "Moat percentile (vs secteur)",
+        "Moat percentile minimum (vs secteur)",
         0, 100, 80
     )
 
@@ -143,6 +177,16 @@ if st.session_state.data is not None:
         round(filtered["MoatPercentile"].mean(), 1) if len(filtered) else 0
     )
     col3.metric("Core Holdings", filtered["CoreHolding"].sum())
+
+    st.divider()
+
+    # ===== BOUTON DISCORD =====
+    if st.button("📨 Envoyer les résultats sur Discord"):
+        ok = send_results_to_discord(df, DATA_PATH)
+        if ok:
+            st.success("✅ Résultats envoyés sur Discord")
+        else:
+            st.error("❌ Envoi Discord impossible")
 
 else:
     st.info("👉 Clique sur **Lancer le scan S&P 500** pour commencer.")
