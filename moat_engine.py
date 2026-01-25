@@ -10,10 +10,6 @@ YEARS = 5
 CACHE_DIR = "moat_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# =========================
-# SCORING RULES
-# =========================
-
 SECTOR_RULES = {
     "Technology": {"rd_high": 0.05, "capex_low": 0.10, "roe_good": 0.15},
     "Healthcare": {"rd_high": 0.07, "capex_low": 0.12, "roe_good": 0.12},
@@ -25,10 +21,6 @@ SECTOR_RULES = {
 DEFAULT_RULES = {"rd_high": 0.03, "capex_low": 0.15, "roe_good": 0.13}
 
 
-# =========================
-# TREND
-# =========================
-
 def moat_trend(scores):
     if len(scores) < 3:
         return 0
@@ -38,17 +30,13 @@ def moat_trend(scores):
 
 
 def moat_trend_label(slope):
-    if slope > 1:
+    if slope > 0.5:
         return "🟢 Expansion"
-    elif slope > -0.5:
+    elif slope > -0.3:
         return "🟡 Stable"
     else:
         return "🔴 Érosion"
 
-
-# =========================
-# CORE ENGINE
-# =========================
 
 def compute_moat_history(ticker):
     cache_path = f"{CACHE_DIR}/{ticker}.csv"
@@ -73,15 +61,14 @@ def compute_moat_history(ticker):
     for i in range(years):
         try:
             revenue = income.loc["Total Revenue"].iloc[i]
-            op_income = income.loc["Operating Income"].iloc[i]
-            net_income = income.loc["Net Income"].iloc[i]
+            op_income = income.loc["Operating Income"].iloc[i] if "Operating Income" in income.index else 0
+            net_income = income.loc["Net Income"].iloc[i] if "Net Income" in income.index else 0
 
             equity = balance.loc["Stockholders Equity"].iloc[i] if "Stockholders Equity" in balance.index else 1
             debt = balance.loc["Total Debt"].iloc[i] if "Total Debt" in balance.index else 0
 
             fcf = cashflow.loc["Free Cash Flow"].iloc[i] if "Free Cash Flow" in cashflow.index else 0
             capex = abs(cashflow.loc["Capital Expenditure"].iloc[i]) if "Capital Expenditure" in cashflow.index else 0
-
             rd = income.loc["Research Development"].iloc[i] if "Research Development" in income.index else 0
 
             margin = op_income / revenue if revenue else 0
@@ -107,13 +94,7 @@ def compute_moat_history(ticker):
         return None
 
     df = pd.DataFrame({"YearScore": yearly_scores})
+    df["Sector"] = sector
     df.to_csv(cache_path, index=False)
     time.sleep(0.15)
     return df
-
-
-def compute_final_moat_score(yearly_scores):
-    avg = np.mean(yearly_scores)
-    stability = 10 if np.std(yearly_scores) < 10 else 0
-    final_score = avg + stability
-    return round(min(final_score, 100), 1)
