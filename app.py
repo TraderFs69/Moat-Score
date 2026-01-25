@@ -32,7 +32,7 @@ def build_top10_message(df):
     lines = []
     for i, row in enumerate(top10.itertuples(), start=1):
         lines.append(
-            f"{i}. **{row.Ticker}** — {row.MoatScore} {row.MoatLabel.split()[0]}"
+            f"{i}. **{row.Ticker}** — {round(row.MoatScore,1)} {row.MoatLabel.split()[0]}"
         )
 
     return (
@@ -58,9 +58,8 @@ def send_to_discord(df):
 
     return response.status_code in (200, 204)
 
-
 # =========================
-# SCAN
+# SCAN ENGINE (ROBUSTE)
 # =========================
 
 def run_scan(progress_bar, status_text):
@@ -78,7 +77,14 @@ def run_scan(progress_bar, status_text):
         if history is None or history.empty:
             continue
 
-        yearly_scores = history["YearScore"].tolist()
+        # ✅ Supporte ANCIEN cache (MoatScore) et NOUVEAU (YearScore)
+        if "YearScore" in history.columns:
+            yearly_scores = history["YearScore"].tolist()
+        elif "MoatScore" in history.columns:
+            yearly_scores = history["MoatScore"].tolist()
+        else:
+            continue
+
         final_score = compute_final_moat_score(yearly_scores)
         trend = moat_trend(yearly_scores)
 
@@ -95,9 +101,8 @@ def run_scan(progress_bar, status_text):
     out.to_csv(DATA_PATH, index=False)
     return out
 
-
 # =========================
-# UI STATE
+# SESSION STATE
 # =========================
 
 if "data" not in st.session_state:
@@ -117,7 +122,7 @@ if st.button("🚀 Lancer le scan S&P 500"):
     progress_bar.empty()
     status_text.empty()
 
-# Charger CSV existant si présent
+# Charger un CSV existant si présent
 if st.session_state.data is None and os.path.exists(DATA_PATH):
     st.session_state.data = pd.read_csv(DATA_PATH)
 
