@@ -9,24 +9,26 @@ st.title("🏰 Moat Scanner – S&P 500")
 
 DATA_PATH = "moat_sp500.csv"
 
-progress_bar = st.progress(0)
-status = st.empty()
-
-def progress_callback(current, total, ticker):
-    progress_bar.progress(current / total)
-    status.text(f"Analyse {ticker} ({current}/{total})")
+# =========================
+# CACHE PURE
+# =========================
 
 @st.cache_data(show_spinner=False)
-def load_data():
+def load_or_compute():
     if os.path.exists(DATA_PATH):
         return pd.read_csv(DATA_PATH)
 
-    st.warning("📊 Calcul initial en cours (1 seule fois)…")
-    df = compute_sp500_moat(progress_callback)
+    df = compute_sp500_moat()
     df.to_csv(DATA_PATH, index=False)
     return df
 
-df = load_data()
+
+# =========================
+# UI LOGIC (NON CACHÉ)
+# =========================
+
+with st.spinner("📊 Calcul du Moat Score (1re fois seulement)…"):
+    df = load_or_compute()
 
 st.success("✅ Données prêtes")
 
@@ -48,7 +50,6 @@ filtered = df[
     (df["MoatLabel"].isin(trend_choice))
 ]
 
-# Core Holding
 filtered["CoreHolding"] = (filtered["MoatScore"] >= 80) & (filtered["MoatTrend"] > 0)
 
 # =========================
@@ -56,10 +57,7 @@ filtered["CoreHolding"] = (filtered["MoatScore"] >= 80) & (filtered["MoatTrend"]
 # =========================
 
 st.subheader("📊 Résultats")
-st.dataframe(
-    filtered.sort_values("MoatScore", ascending=False),
-    use_container_width=True
-)
+st.dataframe(filtered.sort_values("MoatScore", ascending=False), use_container_width=True)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Titres", len(filtered))
