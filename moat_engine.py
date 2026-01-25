@@ -90,30 +90,6 @@ def compute_moat_history(ticker):
 
     df = pd.DataFrame({"MoatScore": scores})
     df.to_csv(cache_path, index=False)
-    time.sleep(0.2)
+    time.sleep(0.2)  # limite Yahoo
 
     return df
-
-
-def compute_sp500_moat():
-    df = pd.read_excel("sp500_constituents.xlsx")
-    tickers = df["Symbol"].dropna().unique()
-
-    results = []
-
-    for ticker in tickers:
-        history = compute_moat_history(ticker)
-        if history is None or history.empty:
-            continue
-
-        scores = history["MoatScore"].tolist()
-        trend = moat_trend(scores)
-
-        results.append({
-            "Ticker": ticker,
-            "MoatScore": scores[0],
-            "MoatTrend": round(trend, 2),
-            "MoatLabel": moat_trend_label(trend)
-        })
-
-    return pd.DataFrame(results)
