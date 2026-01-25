@@ -8,19 +8,26 @@ from scipy.stats import linregress
 
 YEARS = 5
 CACHE_DIR = "moat_cache"
-MAX_RAW_SCORE = 45  # plafond réel du moteur
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-SECTOR_RULES = {
-    "Technology": {"rd_high": 0.06, "capex_low": 0.08, "roe_good": 0.15, "margin_std_good": 0.10},
-    "Healthcare": {"rd_high": 0.08, "capex_low": 0.10, "roe_good": 0.12, "margin_std_good": 0.12},
-    "Consumer Defensive": {"rd_high": 0.02, "capex_low": 0.12, "roe_good": 0.14, "margin_std_good": 0.08},
-    "Industrials": {"rd_high": 0.03, "capex_low": 0.15, "roe_good": 0.13, "margin_std_good": 0.12},
-    "Financial Services": {"rd_high": 0.00, "capex_low": 0.05, "roe_good": 0.14, "margin_std_good": 0.15},
-    "Utilities": {"rd_high": 0.00, "capex_low": 0.20, "roe_good": 0.10, "margin_std_good": 0.05},
-}
-DEFAULT_RULES = {"rd_high": 0.04, "capex_low": 0.12, "roe_good": 0.13, "margin_std_good": 0.10}
+# =========================
+# SCORING RULES
+# =========================
 
+SECTOR_RULES = {
+    "Technology": {"rd_high": 0.05, "capex_low": 0.10, "roe_good": 0.15},
+    "Healthcare": {"rd_high": 0.07, "capex_low": 0.12, "roe_good": 0.12},
+    "Consumer Defensive": {"rd_high": 0.02, "capex_low": 0.15, "roe_good": 0.14},
+    "Industrials": {"rd_high": 0.03, "capex_low": 0.18, "roe_good": 0.13},
+    "Financial Services": {"rd_high": 0.00, "capex_low": 0.08, "roe_good": 0.14},
+    "Utilities": {"rd_high": 0.00, "capex_low": 0.25, "roe_good": 0.10},
+}
+DEFAULT_RULES = {"rd_high": 0.03, "capex_low": 0.15, "roe_good": 0.13}
+
+
+# =========================
+# TREND
+# =========================
 
 def moat_trend(scores):
     if len(scores) < 3:
@@ -39,6 +46,10 @@ def moat_trend_label(slope):
         return "🔴 Érosion"
 
 
+# =========================
+# CORE ENGINE
+# =========================
+
 def compute_moat_history(ticker):
     cache_path = f"{CACHE_DIR}/{ticker}.csv"
     if os.path.exists(cache_path):
@@ -56,63 +67,53 @@ def compute_moat_history(ticker):
     sector = info.get("sector", "Unknown")
     rules = SECTOR_RULES.get(sector, DEFAULT_RULES)
 
-    scores = []
+    yearly_scores = []
     years = min(YEARS, income.shape[1])
 
     for i in range(years):
         try:
             revenue = income.loc["Total Revenue"].iloc[i]
-            op_income = income.loc["Operating Income"].iloc[i] if "Operating Income" in income.index else 0
-            net_income = income.loc["Net Income"].iloc[i] if "Net Income" in income.index else 0
+            op_income = income.loc["Operating Income"].iloc[i]
+            net_income = income.loc["Net Income"].iloc[i]
 
-            equity = (
-                balance.loc["Stockholders Equity"].iloc[i]
-                if not balance.empty and "Stockholders Equity" in balance.index
-                else 1
-            )
-            debt = (
-                balance.loc["Total Debt"].iloc[i]
-                if not balance.empty and "Total Debt" in balance.index
-                else 0
-            )
+            equity = balance.loc["Stockholders Equity"].iloc[i] if "Stockholders Equity" in balance.index else 1
+            debt = balance.loc["Total Debt"].iloc[i] if "Total Debt" in balance.index else 0
 
-            fcf = (
-                cashflow.loc["Free Cash Flow"].iloc[i]
-                if not cashflow.empty and "Free Cash Flow" in cashflow.index
-                else 0
-            )
-            capex = (
-                abs(cashflow.loc["Capital Expenditure"].iloc[i])
-                if not cashflow.empty and "Capital Expenditure" in cashflow.index
-                else 0
-            )
+            fcf = cashflow.loc["Free Cash Flow"].iloc[i] if "Free Cash Flow" in cashflow.index else 0
+            capex = abs(cashflow.loc["Capital Expenditure"].iloc[i]) if "Capital Expenditure" in cashflow.index else 0
 
             rd = income.loc["Research Development"].iloc[i] if "Research Development" in income.index else 0
 
             margin = op_income / revenue if revenue else 0
             roe = net_income / equity if equity else 0
-            capex_ratio = capex / revenue if revenue else 1
             rd_ratio = rd / revenue if revenue else 0
+            capex_ratio = capex / revenue if revenue else 1
 
-            raw = 0
-            raw += 5 if op_income > 0 else 2
-            raw += 5 if fcf > 0 else 2
-            raw += 8 if abs(margin) < rules["margin_std_good"] else 4
-            raw += 8 if roe > rules["roe_good"] else 4
-            raw += 7 if rd_ratio > rules["rd_high"] else 3
-            raw += 6 if capex_ratio < rules["capex_low"] else 3
-            raw += 4 if equity and debt / equity < 0.8 else 2
+            score = 0
+            score += 15 if op_income > 0 else 5
+            score += 15 if fcf > 0 else 5
+            score += 15 if margin > 0.15 else 8
+            score += 15 if roe > rules["roe_good"] else 8
+            score += 10 if rd_ratio > rules["rd_high"] else 5
+            score += 10 if capex_ratio < rules["capex_low"] else 5
+            score += 10 if debt / equity < 1 else 5
 
-            score = (raw / MAX_RAW_SCORE) * 100
-            scores.append(score)
+            yearly_scores.append(score)
 
         except Exception:
             continue
 
-    if not scores:
+    if not yearly_scores:
         return None
 
-    df = pd.DataFrame({"MoatScore": scores})
+    df = pd.DataFrame({"YearScore": yearly_scores})
     df.to_csv(cache_path, index=False)
     time.sleep(0.15)
     return df
+
+
+def compute_final_moat_score(yearly_scores):
+    avg = np.mean(yearly_scores)
+    stability = 10 if np.std(yearly_scores) < 10 else 0
+    final_score = avg + stability
+    return round(min(final_score, 100), 1)
