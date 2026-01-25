@@ -1,83 +1,74 @@
+# app.py
 import streamlit as st
 import pandas as pd
-from moat_engine import moat_trend, moat_trend_label
+import os
+from moat_engine import compute_sp500_moat
 
 st.set_page_config(page_title="Moat Scanner – S&P 500", layout="wide")
-
 st.title("🏰 Moat Scanner – S&P 500")
-st.caption("Moat Score • Moat Trend • Core Holdings")
 
-# =========================
-# LOAD DATA
-# =========================
+DATA_PATH = "moat_sp500.csv"
 
-@st.cache_data
+progress_bar = st.progress(0)
+status = st.empty()
+
+def progress_callback(current, total, ticker):
+    progress_bar.progress(current / total)
+    status.text(f"Analyse {ticker} ({current}/{total})")
+
+@st.cache_data(show_spinner=False)
 def load_data():
-    return pd.read_csv("output/moat_sp500.csv")
+    if os.path.exists(DATA_PATH):
+        return pd.read_csv(DATA_PATH)
+
+    st.warning("📊 Calcul initial en cours (1 seule fois)…")
+    df = compute_sp500_moat(progress_callback)
+    df.to_csv(DATA_PATH, index=False)
+    return df
 
 df = load_data()
 
+st.success("✅ Données prêtes")
+
 # =========================
-# SIDEBAR FILTERS
+# FILTRES
 # =========================
 
 st.sidebar.header("Filtres")
 
-min_moat = st.sidebar.slider("Moat Score minimum", 0, 100, 70)
-trend_filter = st.sidebar.multiselect(
+min_score = st.sidebar.slider("Moat Score minimum", 0, 100, 70)
+trend_choice = st.sidebar.multiselect(
     "Moat Trend",
     ["🟢 Expansion", "🟡 Stable", "🔴 Érosion"],
     default=["🟢 Expansion", "🟡 Stable"]
 )
 
-# =========================
-# COMPUTED LABELS
-# =========================
-
-df["MoatLabel"] = df["MoatTrend"].apply(moat_trend_label)
-
 filtered = df[
-    (df["MoatScore"] >= min_moat) &
-    (df["MoatLabel"].isin(trend_filter))
+    (df["MoatScore"] >= min_score) &
+    (df["MoatLabel"].isin(trend_choice))
 ]
 
-# =========================
-# CORE HOLDING LOGIC
-# =========================
-
-filtered["CoreHolding"] = (
-    (filtered["MoatScore"] >= 80) &
-    (filtered["MoatTrend"] > 0)
-)
+# Core Holding
+filtered["CoreHolding"] = (filtered["MoatScore"] >= 80) & (filtered["MoatTrend"] > 0)
 
 # =========================
-# DISPLAY
+# AFFICHAGE
 # =========================
 
-st.subheader("📊 Résultats filtrés")
-
+st.subheader("📊 Résultats")
 st.dataframe(
     filtered.sort_values("MoatScore", ascending=False),
     use_container_width=True
 )
 
-# =========================
-# SUMMARY
-# =========================
-
 col1, col2, col3 = st.columns(3)
-
-col1.metric("Titres sélectionnés", len(filtered))
+col1.metric("Titres", len(filtered))
 col2.metric("Moat moyen", round(filtered["MoatScore"].mean(), 1))
 col3.metric("Core Holdings", filtered["CoreHolding"].sum())
 
-# =========================
-# DOWNLOAD
-# =========================
-
 st.download_button(
-    "📥 Télécharger en CSV",
+    "📥 Télécharger CSV",
     filtered.to_csv(index=False),
-    file_name="moat_filtered.csv",
-    mime="text/csv"
+    "moat_filtered.csv",
+    "text/csv"
 )
