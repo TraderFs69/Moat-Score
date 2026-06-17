@@ -1,17 +1,20 @@
-name: Moat Score Scanner
+name: Moat Scanner
 
 on:
+
   workflow_dispatch:
 
   schedule:
     - cron: "0 13 * * 1-5"
 
 jobs:
-  run:
+
+  moat:
 
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -20,13 +23,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Cache moat data
+        uses: actions/cache@v4
+        with:
+          path: moat_cache
+          key: moat-cache-v1
+
+      - name: Install requirements
         run: |
           pip install -r requirements.txt
 
       - name: Run Scanner
         env:
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python app.py
