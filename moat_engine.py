@@ -60,7 +60,18 @@ if income.empty or "Total Revenue" not in income.index:
 
     sector = info.get("sector", "Unknown")
     rules = SECTOR_RULES.get(sector, DEFAULT_RULES)
+    
+if info is None:
+    return None
 
+if income.empty:
+    return None
+
+if balance.empty:
+    return None
+
+if cashflow.empty:
+    return None
     yearly_scores = []
     years = min(YEARS, income.shape[1])
 
