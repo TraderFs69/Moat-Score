@@ -43,14 +43,20 @@ def compute_moat_history(ticker):
     if os.path.exists(cache_path):
         return pd.read_csv(cache_path)
 
+   try:
     stock = yf.Ticker(ticker)
+
     income = stock.financials
     balance = stock.balance_sheet
     cashflow = stock.cashflow
     info = stock.info
 
-    if income.empty or "Total Revenue" not in income.index:
-        return None
+except Exception as e:
+    print(f"{ticker}: {e}")
+    return None
+
+if income.empty or "Total Revenue" not in income.index:
+    return None
 
     sector = info.get("sector", "Unknown")
     rules = SECTOR_RULES.get(sector, DEFAULT_RULES)
