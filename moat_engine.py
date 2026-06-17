@@ -96,5 +96,5 @@ def compute_moat_history(ticker):
     df = pd.DataFrame({"YearScore": yearly_scores})
     df["Sector"] = sector
     df.to_csv(cache_path, index=False)
-    time.sleep(0.15)
+    time.sleep(0.50)
     return df
